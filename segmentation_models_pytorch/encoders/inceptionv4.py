@@ -24,16 +24,16 @@ Methods:
 """
 
 import torch.nn as nn
-from pretrainedmodels.models.inceptionresnetv2 import InceptionResNetV2
-from pretrainedmodels.models.inceptionresnetv2 import pretrained_settings
+from pretrainedmodels.models.inceptionv4 import InceptionV4, BasicConv2d
+from pretrainedmodels.models.inceptionv4 import pretrained_settings
 
 from ._base import EncoderMixin
 
 
-class InceptionResNetV2Encoder(InceptionResNetV2, EncoderMixin):
-    def __init__(self, out_channels, depth=5, **kwargs):
+class InceptionV4Encoder(InceptionV4, EncoderMixin):
+    def __init__(self, stage_idxs, out_channels, depth=5, **kwargs):
         super().__init__(**kwargs)
-
+        self._stage_idxs = stage_idxs
         self._out_channels = out_channels
         self._depth = depth
         self._in_channels = 3
@@ -47,21 +47,20 @@ class InceptionResNetV2Encoder(InceptionResNetV2, EncoderMixin):
                 m.padding = (1, 1)
 
         # remove linear layers
-        del self.avgpool_1a
         del self.last_linear
 
     def make_dilated(self, stage_list, dilation_list):
-        raise ValueError("InceptionResnetV2 encoder does not support dilated mode "
+        raise ValueError("InceptionV4 encoder does not support dilated mode "
                          "due to pooling operation for downsampling!")
 
     def get_stages(self):
         return [
             nn.Identity(),
-            nn.Sequential(self.conv2d_1a, self.conv2d_2a, self.conv2d_2b),
-            nn.Sequential(self.maxpool_3a, self.conv2d_3b, self.conv2d_4a),
-            nn.Sequential(self.maxpool_5a, self.mixed_5b, self.repeat),
-            nn.Sequential(self.mixed_6a, self.repeat_1),
-            nn.Sequential(self.mixed_7a, self.repeat_2, self.block8, self.conv2d_7b),
+            self.features[: self._stage_idxs[0]],
+            self.features[self._stage_idxs[0]: self._stage_idxs[1]],
+            self.features[self._stage_idxs[1]: self._stage_idxs[2]],
+            self.features[self._stage_idxs[2]: self._stage_idxs[3]],
+            self.features[self._stage_idxs[3]:],
         ]
 
     def forward(self, x):
@@ -81,10 +80,14 @@ class InceptionResNetV2Encoder(InceptionResNetV2, EncoderMixin):
         super().load_state_dict(state_dict, **kwargs)
 
 
-inceptionresnetv2_encoders = {
-    "inceptionresnetv2": {
-        "encoder": InceptionResNetV2Encoder,
-        "pretrained_settings": pretrained_settings["inceptionresnetv2"],
-        "params": {"out_channels": (3, 64, 192, 320, 1088, 1536), "num_classes": 1000},
+inceptionv4_encoders = {
+    "inceptionv4": {
+        "encoder": InceptionV4Encoder,
+        "pretrained_settings": pretrained_settings["inceptionv4"],
+        "params": {
+            "stage_idxs": (3, 5, 9, 15),
+            "out_channels": (3, 64, 192, 384, 1024, 1536),
+            "num_classes": 1001,
+        },
     }
 }

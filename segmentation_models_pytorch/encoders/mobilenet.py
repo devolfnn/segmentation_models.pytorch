@@ -23,49 +23,32 @@ Methods:
         depth = 3 -> number of feature tensors = 4 (one with same resolution as input and 3 downsampled).
 """
 
+import torchvision
 import torch.nn as nn
-from pretrainedmodels.models.inceptionresnetv2 import InceptionResNetV2
-from pretrainedmodels.models.inceptionresnetv2 import pretrained_settings
 
 from ._base import EncoderMixin
 
 
-class InceptionResNetV2Encoder(InceptionResNetV2, EncoderMixin):
+class MobileNetV2Encoder(torchvision.models.MobileNetV2, EncoderMixin):
+
     def __init__(self, out_channels, depth=5, **kwargs):
         super().__init__(**kwargs)
-
-        self._out_channels = out_channels
         self._depth = depth
+        self._out_channels = out_channels
         self._in_channels = 3
-
-        # correct paddings
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                if m.kernel_size == (3, 3):
-                    m.padding = (1, 1)
-            if isinstance(m, nn.MaxPool2d):
-                m.padding = (1, 1)
-
-        # remove linear layers
-        del self.avgpool_1a
-        del self.last_linear
-
-    def make_dilated(self, stage_list, dilation_list):
-        raise ValueError("InceptionResnetV2 encoder does not support dilated mode "
-                         "due to pooling operation for downsampling!")
+        del self.classifier
 
     def get_stages(self):
         return [
             nn.Identity(),
-            nn.Sequential(self.conv2d_1a, self.conv2d_2a, self.conv2d_2b),
-            nn.Sequential(self.maxpool_3a, self.conv2d_3b, self.conv2d_4a),
-            nn.Sequential(self.maxpool_5a, self.mixed_5b, self.repeat),
-            nn.Sequential(self.mixed_6a, self.repeat_1),
-            nn.Sequential(self.mixed_7a, self.repeat_2, self.block8, self.conv2d_7b),
+            self.features[:2],
+            self.features[2:4],
+            self.features[4:7],
+            self.features[7:14],
+            self.features[14:],
         ]
 
     def forward(self, x):
-
         stages = self.get_stages()
 
         features = []
@@ -76,15 +59,25 @@ class InceptionResNetV2Encoder(InceptionResNetV2, EncoderMixin):
         return features
 
     def load_state_dict(self, state_dict, **kwargs):
-        state_dict.pop("last_linear.bias")
-        state_dict.pop("last_linear.weight")
+        state_dict.pop("classifier.1.bias")
+        state_dict.pop("classifier.1.weight")
         super().load_state_dict(state_dict, **kwargs)
 
 
-inceptionresnetv2_encoders = {
-    "inceptionresnetv2": {
-        "encoder": InceptionResNetV2Encoder,
-        "pretrained_settings": pretrained_settings["inceptionresnetv2"],
-        "params": {"out_channels": (3, 64, 192, 320, 1088, 1536), "num_classes": 1000},
-    }
+mobilenet_encoders = {
+    "mobilenet_v2": {
+        "encoder": MobileNetV2Encoder,
+        "pretrained_settings": {
+            "imagenet": {
+                "mean": [0.485, 0.456, 0.406],
+                "std": [0.229, 0.224, 0.225],
+                "url": "https://download.pytorch.org/models/mobilenet_v2-b0353104.pth",
+                "input_space": "RGB",
+                "input_range": [0, 1],
+            },
+        },
+        "params": {
+            "out_channels": (3, 16, 24, 32, 96, 1280),
+        },
+    },
 }
